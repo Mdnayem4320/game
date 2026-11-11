@@ -265,5 +265,37 @@ function loop(n){const dt=Math.min(.05,(n-last)/1000);last=n;update(dt);draw();r
 requestAnimationFrame(loop);
 })();
 </script>
+  <!-- Continuous Background Audio Playlist -->
+<audio id="bg-music"></audio>
+
+<script>
+  const audioFiles = ["medam1.mp3", "medam2.mp3", "medam3.mp3"];
+  let currentAudioIndex = 0;
+  const music = document.getElementById('bg-music');
+
+  function playNextAudio() {
+    if (currentAudioIndex >= audioFiles.length) {
+      currentAudioIndex = 0; // লিস্ট শেষ হলে আবার প্রথম থেকে শুরু হবে (লুপ হবে)
+    }
+    music.src = audioFiles[currentAudioIndex];
+    music.play().then(() => {
+      currentAudioIndex++;
+    }).catch(error => {
+      console.log("Audio play blocked or error:", error);
+    });
+  }
+
+  // ওয়েবসাইটে যেকোনো জায়গায় প্রথম ক্লিক করলেই বাজানো শুরু হবে
+  window.addEventListener('click', function() {
+    if (music.paused && currentAudioIndex === 0) {
+      playNextAudio();
+    }
+  }, { once: true });
+
+  // একটা শেষ হলেই সাথে সাথে পরেরটা শুরু হবে এবং সারাক্ষণ বাজতে থাকবে
+  music.addEventListener('ended', function() {
+    playNextAudio();
+  });
+</script>
 </body>
 </html>
