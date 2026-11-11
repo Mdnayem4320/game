@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>কারিমার জুতা-চেজ</title>
+<style>
+:root{--bg:#0a0a0a;--fg:#ffffff;--pk:#ff6584;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:"Noto Sans Bengali","Kalpurush","Siyam Rupali","Nirmala UI",system-ui,sans-serif;overflow:hidden;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;left:0;right:0;top:env(safe-area-inset-top,0px);display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:10px 14px;pointer-events:none;flex-wrap:wrap}
+.pill{background:rgba(10,10,10,.75);border:1px solid var(--pk);border-radius:14px;padding:6px 12px;font-weight:700;box-shadow:0 0 14px rgba(255,101,132,.45);font-size:15px}
+.bar{width:150px;height:10px;border-radius:6px;background:#222;margin-top:5px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--pk);box-shadow:0 0 10px var(--pk);transition:width .15s}
+#mute{pointer-events:auto;cursor:pointer;background:rgba(10,10,10,.75);color:var(--fg);border:1px solid var(--pk);border-radius:14px;padding:6px 12px;font-size:16px}
+.ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:radial-gradient(circle at 50% 40%,rgba(255,101,132,.22),rgba(10,10,10,.94) 70%);padding:24px;z-index:5}
+.ov.hide{display:none}
+h1{font-size:clamp(30px,7vw,64px);margin:0 0 6px;color:var(--pk);text-shadow:0 0 22px var(--pk),0 0 50px rgba(255,101,132,.5)}
+p{max-width:520px;line-height:1.6;margin:6px 0;opacity:.92}
+button.go{margin-top:18px;font:inherit;font-weight:800;font-size:20px;padding:12px 34px;border-radius:30px;border:2px solid var(--pk);background:var(--pk);color:var(--bg);cursor:pointer;box-shadow:0 0 26px var(--pk)}
+button.go:active{transform:scale(.96)}
+.sub{font-size:13px;opacity:.65}
+#flashmsg{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);font-size:14px;opacity:.7;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="pill">জুতা পেটা: <span id="hHits">0</span>/5<div class="bar"><i id="bProg"></i></div></div>
+  <div class="pill">স্কোর: <span id="hScore">0</span></div>
+  <div class="pill">দূরত্ব<div class="bar"><i id="bGap"></i></div></div>
+  <button id="mute" title="Sound">🔊</button>
+</div>
+<div id="flashmsg">ট্যাপ / ক্লিক / স্পেস চেপে কারিমাকে দৌড় করান!</div>
+
+<div class="ov" id="start">
+  <h1>কারিমার জুতা-চেজ</h1>
+  <p>ঢাকার রাস্তায় এক মহা কাণ্ড! কারিমা ম্যাডামের হাতে জ্বলজ্বলে গোলাপি জুতা, সামনে প্রাণভয়ে ছুটছে এক বেচারা।</p>
+  <p>ট্যাপ, ক্লিক বা স্পেস/তীর-কী বারবার চেপে কারিমার গতি বাড়ান। ৫ বার জুতা-পেটা করলেই জিত!</p>
+  <button class="go" id="goBtn">শুরু করুন</button>
+  <p class="sub">সাউন্ড অন রাখুন: কথার বদলে মজার সাউন্ড-ইফেক্ট বাজবে, কোনো ভয়েস প্যাক লাগবে না</p>
+</div>
+<div class="ov hide" id="end">
+  <h1 id="eTitle">জয়!</h1>
+  <p id="eText"></p>
+  <button class="go" id="againBtn">আবার খেলুন</button>
+</div>
+
+<script>
+(()=>{
+const C=document.getElementById('c'),g=C.getContext('2d');
+const F='"Noto Sans Bengali","Kalpurush","Siyam Rupali","Nirmala UI",system-ui,sans-serif';
+const PK='#ff6584',BK='#0a0a0a',WH='#ffffff',GY=362,RUNY=420,GOAL=5;
+let W,H,S,LW;
+function resize(){const d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;C.width=W*d;C.height=H*d;S=H/450;LW=W/S;g.setTransform(d*S,0,0,d*S,0,0)}
+addEventListener('resize',resize);resize();
+const $=id=>document.getElementById(id);
+const rnd=i=>{const x=Math.sin(i*127.1+311.7)*43758.5453;return x-Math.floor(x)};
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+
+/* ---------- audio ---------- */
+let AC=null,muted=false;
+function actx(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}return AC}
+function beep(f,d,type,v,slide){if(muted)return;const a=actx();if(!a)return;try{const o=a.createOscillator(),gn=a.createGain();o.type=type||'square';o.frequency.setValueAtTime(f,a.currentTime);if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(30,f*slide),a.currentTime+d);gn.gain.setValueAtTime(v||.08,a.currentTime);gn.gain.exponentialRampToValueAtTime(.001,a.currentTime+d);o.connect(gn);gn.connect(a.destination);o.start();o.stop(a.currentTime+d)}catch(e){}}
+function thwack(){beep(180,.25,'sawtooth',.18,.2);beep(900,.08,'square',.1,.3)}
+/* ---------- synthesized babble voices & sfx (no OS speech packs needed) ---------- */
+let busyUntil=0;
+function unlockAudio(){const a=actx();if(a&&a.state!=='running'){try{a.resume()}catch(e){}}}
+function tone(f,t0,d,type,v,slide,flt){
+  if(muted)return;const a=actx();if(!a)return;
+  try{
+    const o=a.createOscillator(),gn=a.createGain(),T=a.currentTime+t0;
+    o.type=type;o.frequency.setValueAtTime(f,T);
+    if(slide&&slide!==1)o.frequency.exponentialRampToValueAtTime(Math.max(40,f*slide),T+d);
+    gn.gain.setValueAtTime(.0001,T);gn.gain.exponentialRampToValueAtTime(v,T+.012);gn.gain.exponentialRampToValueAtTime(.0001,T+d);
+    let out=o;
+    if(flt){const fl=a.createBiquadFilter();fl.type='bandpass';fl.frequency.value=Math.min(3200,f*3);fl.Q.value=.9;o.connect(fl);out=fl}
+    out.connect(gn);gn.connect(a.destination);o.start(T);o.stop(T+d+.02);
+  }catch(e){}
+}
+/* Each speech bubble plays a burst of cartoon "babble" blips; pitch picks the character's timbre */
+function say(text,pitch,rate,force){
+  if(muted)return;unlockAudio();
+  const now=performance.now();
+  if(!force&&now<busyUntil)return;
+  const n=Math.max(4,Math.min(16,Math.round(text.length/2.5))),gap=.075/(rate||1);
+  const type=pitch>1.4?'triangle':pitch>1.1?'sawtooth':'square';
+  const base=150*pitch;
+  for(let i=0;i<n;i++)tone(base*(.8+Math.random()*.7)*(i===n-1?1.25:1),i*gap,.07,type,.07,.85+Math.random()*.3,true);
+  busyUntil=now+n*gap*1000+150;
+}
+function ding(){tone(880,0,.25,'sine',.09,1,false);tone(1320,.05,.3,'sine',.06,1,false)}
+function jingle(win){
+  if(win)[523,659,784,1047,1319].forEach((f,i)=>tone(f,i*.12,.3,'triangle',.1,1,false));
+  else[400,340,280,200].forEach((f,i)=>tone(f,i*.18,.25,'sawtooth',.07,.9,false));
+}
+document.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{unlockAudio();beep(520,.09,'sine',.1,1.8)}));
+$('mute').onclick=e=>{e.stopPropagation();muted=!muted;$('mute').textContent=muted?'🔇':'🔊';};
+
+/* ---------- lines ---------- */
+const CROWD=["ম্যাডাম এগুলা কী করতেছেন!","ওরে একটা চেয়ার দেন ভাই!","ভিডিও করো, ভিডিও করো!","পপকর্ন কই, পপকর্ন!","আল্লাহ গো, কী কাণ্ড!","ম্যাডাম, জোরে মারেন!"];
+const KARIMA=["তোর সাহস তো কম না, আজ তোরে জুতা পেটা করব!","দাঁড়া, পালাস কই!","আজ তোর একদিন কী আমার একদিন!"];
+const VICTIM=["কারিমা ম্যাডাম প্লিজ আর মাইরেন না!","বাঁচাও! কেউ বাঁচাও!","ভুল হইছে ম্যাডাম, মাফ করে দেন!"];
+const KAFTER=["আরেকটা খা!","এইটা তো শুধু শুরু!"];
+
+/* ---------- state ---------- */
+let state='menu',t=0,kx,vx,boost,hits,score,vStun,vKnock,sw,shake,flash,burst,burstT,chat,lastTap=0,seen,bubbles,pops,parts,startT,endT;
+function reset(){kx=0;vx=270;boost=0;hits=0;score=0;vStun=0;vKnock=0;sw=0;shake=0;flash=0;burst=0;burstT=3;chat=4;seen=new Set();bubbles=[];pops=[];parts=[];endT=0;startT=0}
+reset();
+function bub(text,ref,x,col){bubbles.push({text,ref,x,col,life:2.4})}
+function start(){actx();unlockAudio();reset();state='play';$('start').classList.add('hide');$('end').classList.add('hide');
+  bub(KARIMA[0],'k');say(KARIMA[0],1.25,1,true);setTimeout(()=>{if(state==='play'){bub(VICTIM[1],'v');say(VICTIM[1],1.6,1.1,false)}},2300)}
+$('goBtn').onclick=start;$('againBtn').onclick=start;
+function tap(){unlockAudio();if(state!=='play')return;boost=Math.min(boost+55,230);const n=performance.now();if(n-lastTap>110){beep(300+boost,.05,'triangle',.04);}lastTap=n}
+C.addEventListener('pointerdown',e=>{e.preventDefault();tap()});
+addEventListener('keydown',e=>{if(e.repeat)return;if(['Space','ArrowRight','ArrowUp','KeyD','KeyW'].includes(e.code)||e.key.length===1){if(e.code==='Space')e.preventDefault();tap()}});
+
+function hit(){
+  hits++;sw=.4;shake=16;flash=.4;vStun=.7;vKnock=800;score+=100+Math.round(boost);boost=0;thwack();ding();
+  pops.push({x:vx,y:330,t:0,txt:pick(['ঠাস!','পটাস!','ধুম!'])});
+  for(let i=0;i<18;i++)parts.push({x:vx,y:RUNY-60,vx:(Math.random()-.3)*420,vy:-Math.random()*380,l:.8,c:Math.random()<.5?PK:WH});
+  const v=VICTIM[0];bub(v,'v');say(v,1.7,1.1,true);
+  if(hits<GOAL)setTimeout(()=>{if(state==='play'){const k=pick(KAFTER);bub(k,'k')}},900);
+  if(hits>=GOAL){state='ending';endT=1.3}
+}
+
+/* ---------- update ---------- */
+function update(dt){
+  t+=dt;
+  if(state==='play'||state==='ending'){
+    if(state==='play')startT+=dt;
+    boost=Math.max(0,boost-120*dt);
+    const ks=state==='ending'?0:210+boost;
+    burstT-=dt;if(burstT<=0){burst=1;burstT=3+Math.random()*3}
+    if(burst>0)burst=Math.max(0,burst-dt);
+    let vs=230+hits*16+35*Math.sin(t*1.7)+(burst>0?90:0);
+    if(vStun>0){vs=60;vStun-=dt}
+    kx+=ks*dt;vx+=(vs+vKnock)*dt;vKnock*=Math.max(0,1-4*dt);
+    const gap=vx-kx;
+    if(state==='play'){
+      if(gap<42)hit();
+      else if(gap>650){state='lose';showEnd(false)}
+      chat-=dt;if(chat<=0){chat=5+Math.random()*3;const k=pick(KARIMA);bub(k,'k');say(k,1.25,1,false)}
+    }else{endT-=dt;if(endT<=0){state='win';showEnd(true)}}
+    // crowd reactions
+    const i0=Math.floor((kx-200)/140),i1=Math.floor((kx+LW)/140);
+    for(let i=i0;i<=i1;i++){
+      const x=npcX(i);if(x==null||seen.has(i))continue;
+      if(Math.abs(x-kx)<110){seen.add(i);if(Math.random()<.5&&bubbles.filter(b=>b.ref==null).length<3){const c=pick(CROWD);bub(c,null,x,'c');say(c,.75+Math.random()*.2,1.05,false)}}
+    }
+  }
+  bubbles.forEach(b=>b.life-=dt);bubbles=bubbles.filter(b=>b.life>0);
+  pops.forEach(p=>{p.t+=dt;p.y-=40*dt});pops=pops.filter(p=>p.t<1);
+  parts.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=900*dt;p.l-=dt});parts=parts.filter(p=>p.l>0);
+  if(sw>0)sw-=dt;if(shake>0)shake=Math.max(0,shake-40*dt);if(flash>0)flash-=dt;
+  if(state==='play'||state==='ending'){
+    $('hHits').textContent=hits;$('hScore').textContent=score;
+    $('bProg').style.width=(hits/GOAL*100)+'%';
+    $('bGap').style.width=Math.max(0,Math.min(100,100-((vx-kx)-42)/6.1))+'%';
+  }
+}
+function showEnd(win){
+  $('eTitle').textContent=win?'জয়! কারিমা ম্যাডাম অপ্রতিরোধ্য!':'পালিয়ে গেল!';
+  $('eText').textContent=win?`৫ বার জুতা-পেটা সম্পন্ন! স্কোর: ${score}। সময়: ${startT.toFixed(1)} সেকেন্ড। জনতা তালি দিচ্ছে!`:`আপনি ${hits} বার মারতে পেরেছেন। বেচারা পালিয়ে বাঁচল। আরও জোরে ট্যাপ করুন!`;
+  jingle(win);
+  $('end').classList.remove('hide');
+}
+
+/* ---------- drawing ---------- */
+function npcX(i){return rnd(i+99)>.15?i*140+rnd(i)*70+300:null}
+function glowText(txt,x,y,size,col){g.font=`700 ${size}px ${F}`;g.textAlign='center';g.shadowColor=col;g.shadowBlur=14;g.fillStyle=col;g.fillText(txt,x,y);g.shadowBlur=0}
+function rr(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+
+function person(x,y,o){
+  g.save();g.translate(x,y);g.scale((o.dir||1)*(o.s||1),o.s||1);if(o.rot)g.rotate(o.rot);
+  const ph=o.ph||0,sg=Math.sin(ph);
+  g.lineCap='round';g.lineWidth=4;g.strokeStyle=o.leg||'#bbb';
+  g.beginPath();g.moveTo(0,-24);g.lineTo(sg*13,-Math.max(0,Math.cos(ph))*7);g.moveTo(0,-24);g.lineTo(-sg*13,-Math.max(0,-Math.cos(ph))*7);g.stroke();
+  g.fillStyle=o.body;rr(-8,-48,16,27,6);g.fill();
+  if(o.dress){g.beginPath();g.moveTo(-8,-30);g.lineTo(-12,-18);g.lineTo(12,-18);g.lineTo(8,-30);g.fill()}
+  g.fillStyle=o.skin||'#e8b98f';g.beginPath();g.arc(0,-56,9,0,7);g.fill();
+  g.fillStyle=o.hair||'#222';g.beginPath();g.arc(0,-58,9.5,Math.PI,0);g.fill();
+  if(o.bun){g.beginPath();g.arc(-6,-66,5,0,7);g.fill()}
+  // face
+  g.fillStyle='#111';
+  if(o.face==='scared'){g.fillStyle='#fff';g.beginPath();g.arc(3,-57,3.2,0,7);g.fill();g.fillStyle='#111';g.beginPath();g.arc(3.8,-57,1.4,0,7);g.fill();g.beginPath();g.ellipse(4,-50,2.2,3.2,0,0,7);g.fill();
+    g.fillStyle='#6cf';g.beginPath();g.arc(-9,-62+Math.sin(t*12)*2,1.6,0,7);g.arc(10,-66+Math.cos(t*10)*2,1.6,0,7);g.fill()}
+  else if(o.face==='angry'){g.beginPath();g.arc(3,-57,1.7,0,7);g.fill();g.strokeStyle='#111';g.lineWidth=1.8;g.beginPath();g.moveTo(0,-62);g.lineTo(7,-59);g.moveTo(1,-51);g.lineTo(6,-51);g.stroke()}
+  else{g.beginPath();g.arc(3,-57,1.5,0,7);g.fill();g.beginPath();g.ellipse(4,-51,o.open?2.6:1.6,o.open?3.4:.9,0,0,7);g.fill()}
+  // arms
+  g.strokeStyle=o.skin||'#e8b98f';g.lineWidth=3.4;
+  const arm=a=>{const ex=Math.cos(a)*17,ey=-42+Math.sin(a)*17;g.beginPath();g.moveTo(0,-42);g.lineTo(ex,ey);g.stroke();return[ex,ey]};
+  arm(o.a1);
+  const [hx,hy]=arm(o.a2);
+  if(o.sandal){g.save();g.translate(hx,hy);g.rotate(o.a2);g.shadowColor=PK;g.shadowBlur=22;g.fillStyle=PK;g.beginPath();g.ellipse(11,0,14,6.5,0,0,7);g.fill();g.shadowBlur=0;g.strokeStyle=WH;g.lineWidth=2;g.beginPath();g.arc(9,0,5,Math.PI,0);g.stroke();g.restore()}
+  if(o.phone){g.save();g.translate(hx,hy);g.fillStyle='#fff';rr(-2,-8,6,11,1.5);g.fill();g.restore()}
+  g.restore();
+}
+
+function draw(){
+  const cam=kx-LW*.28;
+  g.save();
+  const sh=shake;g.translate((Math.random()-.5)*sh,(Math.random()-.5)*sh);
+  // sky
+  const sk=g.createLinearGradient(0,0,0,GY);sk.addColorStop(0,'#0a0a0a');sk.addColorStop(1,'#2a0f1b');g.fillStyle=sk;g.fillRect(-20,-20,LW+40,GY+40);
+  g.fillStyle='#fff';for(let i=0;i<45;i++){g.globalAlpha=.3+.5*rnd(i+7)*(.6+.4*Math.sin(t*2+i));g.fillRect(((rnd(i)*LW*1.5-cam*.02)%LW+LW)%LW,rnd(i+50)*200,1.6,1.6)}g.globalAlpha=1;
+  g.shadowColor=PK;g.shadowBlur=40;g.fillStyle='#ffd9e1';g.beginPath();g.arc(LW*.8-cam*.01%50,70,26,0,7);g.fill();g.shadowBlur=0;
+  // far skyline
+  let px=cam*.2,i0=Math.floor(px/90)-1;
+  for(let i=i0;i<i0+LW/90+3;i++){const h=110+rnd(i)*150,x=i*90-px;g.fillStyle='#120a0e';g.fillRect(x,GY-h,84,h);
+    for(let r=0;r<h/18-1;r++)for(let c=0;c<4;c++){if(rnd(i*31+r*7+c)>.55){g.fillStyle=rnd(i+r+c)>.6?PK:'#fff';g.globalAlpha=.55;g.fillRect(x+8+c*19,GY-h+10+r*18,8,8)}}g.globalAlpha=1}
+  // mid buildings with signs
+  px=cam*.5;i0=Math.floor(px/150)-1;const signs=['চা','ফার্মেসি','হোটেল','মিষ্টি','বিরিয়ানি','মোবাইল'];
+  for(let i=i0;i<i0+LW/150+3;i++){const h=90+rnd(i+300)*110,x=i*150-px;g.fillStyle='#181818';g.fillRect(x,GY-h,140,h);
+    g.strokeStyle=PK;g.globalAlpha=.7;g.lineWidth=1.5;g.strokeRect(x+.5,GY-h+.5,139,h);g.globalAlpha=1;
+    g.fillStyle='#0a0a0a';g.fillRect(x+25,GY-34,90,34);
+    glowText(signs[Math.floor(rnd(i+9)*signs.length)],x+70,GY-12,18,rnd(i+4)>.5?PK:WH);
+    for(let c=0;c<3;c++){g.fillStyle=rnd(i*5+c)>.4?'#ffe9a8':'#222';g.globalAlpha=.8;g.fillRect(x+14+c*42,GY-h+14,26,22);g.globalAlpha=1}}
+  // sidewalk & road
+  g.fillStyle='#161616';g.fillRect(-20,GY-34,LW+40,34);
+  g.fillStyle='#0f0f0f';g.fillRect(-20,GY,LW+40,H/S);
+  g.shadowColor=PK;g.shadowBlur=12;g.fillStyle=PK;g.fillRect(-20,GY,LW+40,2.5);g.shadowBlur=0;
+  g.fillStyle='#fff';g.globalAlpha=.6;for(let x=-(cam%90);x<LW+90;x+=90)g.fillRect(x,432,46,3);g.globalAlpha=1;
+  // streetlights
+  i0=Math.floor(cam/320)-1;
+  for(let i=i0;i<i0+LW/320+3;i++){const x=i*320+120-cam;g.fillStyle='#222';g.fillRect(x-2,GY-130,4,130);g.fillRect(x-2,GY-130,26,4);
+    const gr=g.createRadialGradient(x+24,GY-122,2,x+24,GY-110,110);gr.addColorStop(0,'rgba(255,101,132,.55)');gr.addColorStop(1,'rgba(255,101,132,0)');g.fillStyle=gr;g.fillRect(x-90,GY-230,230,260);
+    g.fillStyle='#fff';g.beginPath();g.arc(x+24,GY-124,5,0,7);g.fill()}
+  // crowd
+  const n0=Math.floor((cam-100)/140)-1,n1=Math.floor((cam+LW)/140)+1;
+  const cols=['#ffffff','#ff6584','#8a8a8a','#d9d9d9','#c24a66'];
+  for(let i=n0;i<=n1;i++){const x=npcX(i);if(x==null)continue;const near=Math.abs(x-kx)<300&&(state==='play'||state==='ending');
+    const ph=t*8+i;
+    person(x-cam,GY-4+(near?-Math.abs(Math.sin(ph))*4:0),{s:.8,dir:x<vx?1:-1,body:cols[Math.floor(rnd(i+11)*cols.length)],leg:'#555',hair:rnd(i+2)>.5?'#222':'#6b4a2f',skin:rnd(i+3)>.5?'#e8b98f':'#c99468',
+      face:'wow',open:near,ph:0,a1:near?-2.3+Math.sin(ph)*.3:1.5,a2:near?-1.0+Math.cos(ph)*.3:1.5,phone:rnd(i+5)>.6})}
+  // speed lines
+  if(boost>90){g.strokeStyle=PK;g.globalAlpha=.5;g.lineWidth=2;for(let i=0;i<7;i++){const y=380+rnd(i+Math.floor(t*20))*60,x=Math.random()*LW;g.beginPath();g.moveTo(x,y);g.lineTo(x-60-boost/3,y);g.stroke()}g.globalAlpha=1}
+  // runners
+  const kxs=LW*.28,vxs=vx-cam;
+  const swp=sw>0?1-sw/.4:-1;
+  const vrot=vStun>0?Math.sin(t*40)*.15:0;
+  person(vxs,RUNY-4,{s:1.3,body:'#fff',leg:'#999',hair:'#222',face:'scared',ph:vx/15,rot:vrot,a1:-1.9+Math.sin(t*14)*.4,a2:-1.2+Math.cos(t*13)*.4});
+  const ka=swp>=0?-1.7+swp*3.3:-1.25+Math.sin(t*14)*.15;
+  g.save();g.shadowColor=PK;g.shadowBlur=18;g.globalAlpha=.25;g.fillStyle=PK;g.beginPath();g.ellipse(kxs,RUNY,30,6,0,0,7);g.fill();g.restore();
+  person(kxs,RUNY,{s:1.35,body:PK,dress:true,leg:'#e8b98f',hair:'#1b1b1b',bun:true,face:'angry',ph:kx/15,sandal:true,a1:1.0+Math.sin(kx/15)*.8,a2:ka});
+  // bubbles
+  bubbles.forEach(b=>{let x=b.ref==='k'?kxs:b.ref==='v'?vxs:b.x-cam,y=b.ref==='k'?RUNY-150:b.ref==='v'?RUNY-150:GY-92;
+    if(b.ref==='k')y-=22;
+    g.font=`700 14px ${F}`;g.textAlign='center';const w=Math.min(g.measureText(b.text).width+22,LW-20);
+    x=Math.max(w/2+8,Math.min(LW-w/2-8,x));const a=Math.min(1,b.life*3);g.globalAlpha=a;
+    const k=b.col==='c'?['#0a0a0a',WH,WH]:b.ref==='k'?[PK,BK,PK]:[WH,BK,WH];
+    g.shadowColor=k[2];g.shadowBlur=12;g.fillStyle=k[0];g.strokeStyle=k[2];g.lineWidth=1.5;rr(x-w/2,y-18,w,30,10);g.fill();g.stroke();g.shadowBlur=0;
+    g.beginPath();g.moveTo(x-5,y+11);g.lineTo(x,y+19);g.lineTo(x+5,y+11);g.fill();
+    g.fillStyle=k[1];g.fillText(b.text,x,y+3,w-14);g.globalAlpha=1});
+  // pops & particles
+  pops.forEach(p=>{g.globalAlpha=1-p.t;glowText(p.txt,p.x-cam,p.y,44*(1+p.t*.3),PK);g.globalAlpha=1});
+  parts.forEach(p=>{g.globalAlpha=Math.max(0,p.l*1.4);g.fillStyle=p.c;g.fillRect(p.x-cam,p.y,5,5)});g.globalAlpha=1;
+  g.restore();
+  if(flash>0){g.fillStyle=PK;g.globalAlpha=Math.min(.4,flash);g.fillRect(0,0,LW,450);g.globalAlpha=1}
+}
+
+let last=performance.now();
+function loop(n){const dt=Math.min(.05,(n-last)/1000);last=n;update(dt);draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
